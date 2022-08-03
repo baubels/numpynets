@@ -1,0 +1,8 @@
+setup.py
+deepnets/__init__.py
+deepnets/dnn.py
+numpynets.egg-info/PKG-INFO
+numpynets.egg-info/SOURCES.txt
+numpynets.egg-info/dependency_links.txt
+numpynets.egg-info/requires.txt
+numpynets.egg-info/top_level.txt
