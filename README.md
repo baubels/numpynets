@@ -24,3 +24,4 @@ With the learnt net:
 * convs
 * 1d data as input (req's a minor bug fix)
 * easier custom loss, activations, initialisations
+* cuda-aware training (this has been done just needs uploading)
