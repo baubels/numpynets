@@ -9,9 +9,7 @@ Building neural nets from scratch using NumPy. Allows for agile 2D classificatio
 
 4) initialise and run an arbitrary length feed-forward fully connected net
 
-With the learnt net you can 
+With the learnt net: 
 1) extract learnt weights/biases with `.trained_ned[layer_num].W`, `.trained_net[layer_num].B`
-2) extract learning histories/losses
-3) predict values for new inputs
-
-### Example
+2) extract learning histories/losses using `.history`
+3) predict values for new inputs with `.predict(xdata)`
