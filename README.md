@@ -1,6 +1,6 @@
 Neural nets from scratch using NumPy.
 
-vid_usage.mp4
+![](gif_highres.gif)
 ### Usage
 1) clone repo
 2) install locally (`python -m pip install -e ./numpynets`)
