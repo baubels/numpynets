@@ -1,1 +1,1 @@
-deepnets
+numpynets
