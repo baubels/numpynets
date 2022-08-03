@@ -117,9 +117,8 @@ def fwd_pass(crossentropy, layers, x, y=None):
     return pre_activations, post_activations, outputs, fetch_ws, pred
 
 
-def fast_predict(layers, x, y):
+def fast_predict(layers, x):
     xc = np.copy(x).T
-    
     for layer in layers:
         xc = layer.post_activation(xc)
     
@@ -127,7 +126,7 @@ def fast_predict(layers, x, y):
 
 
 def fast_predict_dataset(layers, x_data, y_data):
-    y_hat = fast_predict(layers, x_data, y_data)
+    y_hat = fast_predict(layers, x_data)
     yvals = np.argmax(y_data, axis=1)
     return np.sum(y_hat == yvals)/len(yvals)
 
@@ -250,7 +249,6 @@ def train_epoch(derivatives, data_loader, layers, x_train, y_train, x_valid, y_v
     losses = []
     
     progress_bar_length = 30
-
     for i in range(batches_per_epoch):
         losses.append(train_one_loop(layers, x_batches[i], y_batches[i], step_size, fwd_pass, bwd_pass))
         print(batches_per_epoch, 'batches per epoch: [', '.'*((i+1)//(batches_per_epoch//progress_bar_length)), end='\r')
@@ -263,30 +261,39 @@ def train_epoch(derivatives, data_loader, layers, x_train, y_train, x_valid, y_v
         print(' | train acc.: ', "%.4f"%train_accs, end=' | ')
         print('val acc.: ', "%.4f"%val_accs, end=' | ')
     
-    avg_loss = np.sum(np.array(losses)/len(losses))
-    return avg_loss, train_accs, val_accs
+        avg_loss = np.sum(np.array(losses)/len(losses))
+        return avg_loss, train_accs, val_accs
+    elif predict is False:
+        train_accs = fast_predict_dataset(layers, x_train, y_train)
+        avg_loss = np.sum(np.array(losses)/len(losses))
+        return avg_loss, train_accs
 
 
 def train_nn(train_epoch, layers, x_train, y_train, x_valid, y_valid, no_epochs, step_size=10e-3, batch_size=256, predict=False):
     losses = []
     training_accs = []
-    validation_accs = []
+    if predict:
+        validation_accs = []
     
     print('\n', '!!! STARTED TRAINING !!!', end = '\n'*2)
     print('NET TYPE: ', 'FEED FORWARD NET') # add a property when doing this to specify neural network type
     print('EPOCHS: ', no_epochs)
     print('TRAINING INPUT SIZE: ', x_train.shape, ', LABEL INPUT SIZE: ', y_train.shape)
-    print('VALIDATION INPUT SIZE: ', x_valid.shape, ', LABEL INPUT SIZE: ', y_valid.shape)
-    print('UPDATE PROCEDURE MODE: STOCHASTIC GRADIENT DESCENT, CONSTANT STEP SIZE: ', step_size, ', BATCH SIZE: ', batch_size, end='\n'*2)
+    if predict == True:
+        print('VALIDATION INPUT SIZE: ', x_valid.shape, ', LABEL INPUT SIZE: ', y_valid.shape)
+    print('UPDATE PROCEDURE: SGD')
+    print('LOSS: L2')
+    print('STEP SIZE: ', step_size, ', BATCH SIZE: ', batch_size, end='\n'*2)
 
     t0 = time.perf_counter()
     for i in range(no_epochs):
-        ll, ta, va = train_epoch(derivatives, data_loader, 
-                                  layers, x_train, y_train, x_valid, y_valid,
-                      step_size=step_size, batch_size=batch_size, predict=predict)
-        losses.append(ll)
-        training_accs.append(ta)
-        validation_accs.append(va)
+        trained_outputs = train_epoch(derivatives, data_loader, 
+                                 layers, x_train, y_train, x_valid, y_valid,
+                                 step_size=step_size, batch_size=batch_size, predict=predict)
+        losses.append(trained_outputs[0])
+        training_accs.append(trained_outputs[1])
+        if predict:
+            validation_accs.append(trained_outputs[1])
         print(i+1, ' out of ', no_epochs, ' epochs')
 
     t1 = time.perf_counter()
@@ -295,64 +302,82 @@ def train_nn(train_epoch, layers, x_train, y_train, x_valid, y_valid, no_epochs,
     print('PER EPOCH:', "%.1f"%(((t1-t0)/no_epochs)), 'SECONDS.', end='\n'*2)
     print('RETURNS: (layers, losses, training_accs, validation_accs)')
 
-    return layers, losses, training_accs, validation_accs
+    if predict:
+        return layers, losses, training_accs, validation_accs
+    else:
+        return layers, losses, training_accs
 
 
-def flatten(x_train, y_train, x_test, y_test):
-    # assuming an input tensor of rank 3 (first dimension specifying batch size)
-    # `flatten` flattens the first two dimensions
-    # returning a tensor of rank 2 (batchsize, flattened_shape)
-    # expects numpy arrays!!!
-    x_train_copy = np.reshape(x_train, (x_train.shape[0], x_train.shape[1]*x_train.shape[2]))
-    x_test_copy = np.reshape(x_test, (x_test.shape[0], x_test.shape[1]*x_test.shape[2]))
-    return x_train_copy, y_train, x_test_copy, y_test
+class feedforwardnet:
+    def feed_1d(self, x, y):
+        if len(x) != len(y):
+            print("Make sure both x and y datasets either have or haven't gotten validation splits")
+        if len(x) == 2 and len(y) == 2:
+            self.x_train = np.expand_dims(x[0], -1)
+            self.y_train = np.expand_dims(y[0], -1)
+            self.x_test = np.expand_dims(x[1], -1)
+            self.y_test = np.expand_dims(y[1], -1)
+            self.predict = True
+        if len(x) == 1 and len(y) == 1:
+            self.x_train = np.expand_dims(x[0], -1)
+            self.y_train = np.expand_dims(y[0], -1)
+            self.predict = False
 
-
-# function implementing the above architecture
-
-
-def ffn(layers):
-    '''
-    function for initialising feed-forward nets
-
-    input: layers (a list of non-negative integers)
-    output: a list containing feed-forward 'he' initialised feed-forward net
-
-
-    layers: a list containing integers
-        first entry must specify flattened input size
-        further entries specify deep neural net layer size, in order
-
-        e.g: dnn([784, 400, 400, 400, 20, 10]) makes a 5 layer deep
-             feed forward neural net taking input vectors of size 784
-             with subsequence network widths of 400, 400, 400, 20, and 10
-    
-    weight initialisation is 'kaiming he' as standard for layer weights and bias
-    '''
-    make_layers = []
-    
-    last = False
-    for layer in range(len(layers)-1):
-        if layer == len(layers) - 2:
-            last = True
+    def feed_2d(self, x, y):
+        if len(x) != len(y):
+            print("Make sure both x and y datasets either have or haven't gotten validation splits")
         
+        if len(x) == 2 and len(y) == 2:
+            x_train_copy = np.reshape(x[0], (x[0].shape[0], x[0].shape[1]*x[0].shape[2]))
+            x_test_copy = np.reshape(x[1], (x[1].shape[0], x[1].shape[1]*x[1].shape[2]))
+            self.x_train = x_train_copy
+            self.y_train = y[0]
+            self.x_test = x_test_copy
+            self.y_test = y[1]
+            self.predict = True
+        if len(x) == 1 and len(y) == 1:
+            x_train_copy = np.reshape(x[0], (x[0].shape[0], x[0].shape[1]*x[0].shape[2]))
+            self.x_train = x_train_copy
+            self.y_train = y[0]
+            self.predict = False
+
+    def make_layers(self, layers, verbose=False):
+        make_layers = []
+        last = False
+        for layer in range(len(layers)-1):
+            if layer == len(layers) - 2:
+                last = True
+            
+            make_layers.append(nn_hidden_layer(make_W(layers[layer], layers[layer+1]), make_B(layers[layer+1]), last))
+        self.untrained_net = make_layers
         
-        make_layers.append(nn_hidden_layer(make_W(layers[layer], layers[layer+1]), make_B(layers[layer+1]), last))
+        if verbose:
+            print('Initialised Feed-forward net layers with "he" initialisation.', end = '\n'*2)
+            print('Input size: {}'.format(layers[0]))
+            print('Output size: {}'.format(layers[-1]))
+            print('Passing through fully-connected layers of width: {}'.format(layers[1:-1]))
 
-    print('Initialised Feed-forward net.', end = '\n'*2)
-    print('Input size: {}'.format(layers[0]))
-    print('Output size: {}'.format(layers[-1]))
-    print('Passing through fully-connected layers of width: {}'.format(layers[1:-1]))
-    return make_layers
-
-'''
-Usage:
-
-x_train_copy, y_train, x_test_copy, y_test = flatten(x_train, y_train, x_test, y_test)
-layers = ffn([len(x_train_copy[0]), 200, 100, 10])
-layers_og, losses_og, train_accs_og, test_accs_og = train_nn(train_epoch, layers, x_train_copy, y_train, x_test_copy, y_test, 
-                                                             no_epochs=1, 
-                                                             step_size=10e-3, 
-                                                             batch_size=256, 
-                                                             predict=True)
-'''
+    def train(self, no_epochs=10, step_size=10e-3, batch_size=32):
+        if self.predict:
+            trained_layers, trained_losses, trained_accs, test_accs = train_nn(train_epoch, self.untrained_net, 
+                                                                               self.x_train, self.y_train, self.x_test, self.y_test, 
+                                                                               no_epochs=no_epochs, 
+                                                                               step_size=step_size, 
+                                                                               batch_size=batch_size, 
+                                                                               predict=self.predict)
+            self.history = [trained_losses, trained_accs, test_accs]
+            self.trained_net = trained_layers
+        else:
+            trained_layers, trained_losses, trained_accs = train_nn(train_epoch, self.untrained_net, 
+                                                                    self.x_train, self.y_train, self.x_train, self.y_train, 
+                                                                    no_epochs=no_epochs, 
+                                                                    step_size=step_size, 
+                                                                    batch_size=batch_size, 
+                                                                    predict=self.predict)
+            self.history = [trained_losses, trained_accs]
+            self.trained_net = trained_layers
+        print('ACCESS trained net as (feedforwardnet).trained_net, and loss history as (feedforwardnet).history')
+        print('ACCESS layer weight and biases in net as (feedforwardnet).trained_net[layer_num].W, (feedforwardnet).trained_net[layer_num].B')
+    
+    def predict(self, x):
+        return fast_predict(self.trained_net, x)

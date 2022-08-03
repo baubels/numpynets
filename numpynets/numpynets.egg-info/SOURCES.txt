@@ -1,6 +1,6 @@
 setup.py
-deepnets/__init__.py
-deepnets/dnn.py
+numpynets/__init__.py
+numpynets/dnn.py
 numpynets.egg-info/PKG-INFO
 numpynets.egg-info/SOURCES.txt
 numpynets.egg-info/dependency_links.txt
